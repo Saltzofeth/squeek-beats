@@ -194,9 +194,10 @@ function showSource(){
   const el=$('source');
   if(mode==='live'){el.textContent='Tempo derived from his live RPM, not a recording of each pass.';return}
   if(loading){el.textContent='Loading real runs… practice pattern until they arrive.';return}
-  if(!pattern)return;
+  const p=mode==='daily'?dailyP:basePattern;
+  if(!p)return;
   if(mode==='daily'){el.textContent='Daily run for '+new Date().toISOString().slice(0,10)+' (UTC): everyone gets the same real run today. Compare scores with friends.';return}
-  el.textContent=pattern.practice?'Could not load real runs'+(loadErr?' ('+loadErr+')':'')+', so this is a labelled practice pattern.':'Replaying '+pattern.times.length+' real wheel passes recorded from the wheel (archived runs).';
+  el.textContent=p.practice?'Could not load real runs'+(loadErr?' ('+loadErr+')':'')+', so this is a labelled practice pattern.':'Replaying '+p.times.length+' real wheel passes recorded from the wheel (archived runs).';
 }
 
 /* ---------- sound ---------- */
@@ -254,7 +255,7 @@ function renderScore(){
 function startPlay(){
   if(mode!=='live')pattern=mode==='daily'?dailyP:basePattern;
   ensureAudio();resetScore();beats=[];idx=0;playing=true;
-  S.mode=mode;S.day=new Date().toISOString().slice(0,10);S.bpm=mode!=='live'?pattern.bpm:Math.round(live.rpm);
+  S.practice=mode!=='live'&&!!pattern.practice;S.mode=mode;S.day=new Date().toISOString().slice(0,10);S.bpm=mode!=='live'?pattern.bpm:Math.round(live.rpm);
   if(mode!=='live')nextLoop=clock()+.6;else liveNext=clock()+.6;
   clearInterval(timer);timer=setInterval(tick,100);
   $('play').textContent='Stop';$('card').disabled=true;$('copy').disabled=true;$('cardView').style.display='none';setShare(false);
@@ -263,6 +264,7 @@ function startPlay(){
 function stopPlay(msg){
   playing=false;clearInterval(timer);beats=[];
   $('play').textContent='Play';
+  if(mode!=='live'){pattern=mode==='daily'?dailyP:basePattern;if(pattern){$('bpm').textContent=pattern.bpm;showSource()}}
   const n=S.p+S.g+S.m;
   $('card').disabled=!n;$('copy').disabled=!n;setShare(n>0);
   if(n){saveStats();showCard()}
@@ -356,17 +358,17 @@ function makeCard(){
   T('score',34,610,'#7d89b5');
   T(acc()+'% accuracy',48,720,'#f1ecc3');
   T('best combo '+S.best,48,790,'#f1ecc3');
-  T(S.bpm+' BPM, '+(S.mode==='live'?'his live pace':S.mode==='daily'?'daily run '+S.day:'a real run'),48,860,'#f1ecc3');
+  T(S.bpm+' BPM, '+(S.mode==='live'?'his live pace':S.practice?'practice rhythm':S.mode==='daily'?'daily run '+S.day:'a real run'),48,860,'#f1ecc3');
   T('Unofficial community project. Squeekchain Sepolia test data.',26,1010,'#7d89b5');
   return c;
 }
-function shareText(){return(S.mode==='daily'?'Daily run '+S.day+': ':'')+'I scored '+Math.round(S.score)+' on Squeek Beats, tapping along to Squeektoshi’s real wheel ('+acc()+'% accuracy, best combo '+S.best+'). Unofficial community project for @squeekchain'}
+function shareText(){return(S.mode==='daily'?'Daily run '+S.day+': ':'')+'I scored '+Math.round(S.score)+' on Squeek Beats, tapping along to '+(S.practice?'a practice beat':'Squeektoshi’s real wheel')+' ('+acc()+'% accuracy, best combo '+S.best+'). Unofficial community project for @squeekchain'}
 function setShare(on){
   const a=$('share');a.classList.toggle('off',!on);
   if(on)a.href='https://x.com/intent/post?text='+encodeURIComponent(shareText());else a.removeAttribute('href');
 }
 function showCard(){
-  const v=$('cardView');v.getContext('2d').drawImage(makeCard(),0,0,540,540);v.style.display='block';
+  const v=$('cardView');v.getContext('2d').drawImage(makeCard(),0,0,540,540);v.style.display='block';v.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function saveStats(){
   const n=S.p+S.g+S.m;if(!n)return;
