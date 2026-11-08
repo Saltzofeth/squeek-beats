@@ -93,7 +93,7 @@ if(OVERLAY)document.body.classList.add('overlay');
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let ctx=null,master=null,nb=null;
+let ctx=null,master=null,nb=null,bus=null;
 const clock=()=>ctx?ctx.currentTime:performance.now()/1000;
 
 let mode='replay',playing=false,judging=true,beats=[],nextLoop=0,liveNext=0,idx=0,timer=null,pattern=null,S;
@@ -205,13 +205,13 @@ function ensureAudio(){
   if(!ctx){ctx=new(window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=.8;master.connect(ctx.destination)}
   if(ctx.state==='suspended')ctx.resume();
 }
-function kick(T,acc,c=ctx,dst=master){
+function kick(T,acc,c=ctx,dst=bus){
   const o=c.createOscillator(),gn=c.createGain();
   o.type='sine';o.frequency.setValueAtTime(acc?190:150,T);o.frequency.exponentialRampToValueAtTime(45,T+.12);
   gn.gain.setValueAtTime(acc?1:.75,T);gn.gain.exponentialRampToValueAtTime(.001,T+.2);
   o.connect(gn);gn.connect(dst);o.start(T);o.stop(T+.22);
 }
-function hat(T,c=ctx,dst=master){
+function hat(T,c=ctx,dst=bus){
   if(!c._nb){const b=c.createBuffer(1,Math.floor(c.sampleRate*.06),c.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;c._nb=b}
   const s=c.createBufferSource(),f=c.createBiquadFilter(),gn=c.createGain();
   s.buffer=c._nb;f.type='highpass';f.frequency.value=7000;
@@ -226,12 +226,12 @@ function playKit(T,i){
   if(k==='wood'){
     o.type='triangle';o.frequency.setValueAtTime(i%4===0?1100:800,T);o.frequency.exponentialRampToValueAtTime(300,T+.05);
     gn.gain.setValueAtTime(.7,T);gn.gain.exponentialRampToValueAtTime(.001,T+.07);
-    o.connect(gn);gn.connect(master);o.start(T);o.stop(T+.08);return;
+    o.connect(gn);gn.connect(bus);o.start(T);o.stop(T+.08);return;
   }
   const n=SCALE[(i*3+Math.floor(i/8))%SCALE.length];
   o.type='square';o.frequency.setValueAtTime(220*Math.pow(2,n/12),T);
   gn.gain.setValueAtTime(.18,T);gn.gain.exponentialRampToValueAtTime(.001,T+.22);
-  o.connect(gn);gn.connect(master);o.start(T);o.stop(T+.24);
+  o.connect(gn);gn.connect(bus);o.start(T);o.stop(T+.24);
 }
 function addBeat(T,i){
   beats.push({t:T,j:!judging});
@@ -254,7 +254,7 @@ function renderScore(){
 }
 function startPlay(){
   if(mode!=='live')pattern=mode==='daily'?dailyP:basePattern;
-  ensureAudio();resetScore();beats=[];idx=0;playing=true;
+  ensureAudio();bus=ctx.createGain();bus.connect(master);resetScore();beats=[];idx=0;playing=true;
   S.practice=mode!=='live'&&!!pattern.practice;S.mode=mode;S.day=new Date().toISOString().slice(0,10);S.bpm=mode!=='live'?pattern.bpm:Math.round(live.rpm);
   if(mode!=='live')nextLoop=clock()+.6;else liveNext=clock()+.6;
   clearInterval(timer);timer=setInterval(tick,100);
@@ -263,6 +263,7 @@ function startPlay(){
 }
 function stopPlay(msg){
   playing=false;clearInterval(timer);beats=[];
+  if(bus){try{bus.disconnect()}catch(e){}bus=null}
   $('play').textContent='Play';
   if(mode!=='live'){pattern=mode==='daily'?dailyP:basePattern;if(pattern){$('bpm').textContent=pattern.bpm;showSource()}}
   const n=S.p+S.g+S.m;
@@ -368,7 +369,7 @@ function setShare(on){
   if(on)a.href='https://x.com/intent/post?text='+encodeURIComponent(shareText());else a.removeAttribute('href');
 }
 function showCard(){
-  const v=$('cardView');v.getContext('2d').drawImage(makeCard(),0,0,540,540);v.style.display='block';v.scrollIntoView({behavior:'smooth',block:'nearest'});
+  const v=$('cardView');v.getContext('2d').drawImage(makeCard(),0,0,540,540);v.style.display='block';v.scrollIntoView({behavior:'smooth',block:'center'});
 }
 function saveStats(){
   const n=S.p+S.g+S.m;if(!n)return;
@@ -402,6 +403,13 @@ document.querySelectorAll('input[name=mode]').forEach(r=>r.onchange=()=>{
   renderStats();
   renderState();showSource();
 });
+function restartAudio(){
+  if(!playing||!ctx||OVERLAY)return;
+  try{bus.disconnect()}catch(e){}
+  bus=ctx.createGain();bus.connect(master);
+  beats=[];const t=clock()+.3;nextLoop=t;liveNext=t;
+}
+$('kit').onchange=restartAudio;
 $('lat').oninput=()=>{$('latv').textContent=$('lat').value+' ms'};
 addEventListener('keydown',e=>{if(e.code==='Space'&&playing){e.preventDefault();if(!e.repeat)tap()}});
 addEventListener('keyup',e=>{if(e.code==='Space'&&playing)e.preventDefault()});
