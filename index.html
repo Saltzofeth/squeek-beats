@@ -129,24 +129,29 @@ const practice=()=>({times:Array.from({length:32},(_,i)=>i*0.6),len:19.2,bpm:100
 function compact(s){
   const offs=[];
   for(const p of s.passages){const n=Number(p.offsetNs);if(isFinite(n))offs.push(n/1e6)}
-  return offs.length>=12?offs:null;
+  if(offs.length<8)return null;
+  let ok=0;
+  for(let i=1;i<offs.length;i++){const d=offs[i]-offs[i-1];if(d>200&&d<1600)ok++}
+  return ok>=(offs.length-1)*.7?offs:null;
 }
-let cands=[],basePattern=null,dailyP=null;
+let cands=[],basePattern=null,dailyP=null,loadErr='';
 async function loadRuns(){
-  let cursor=null;const all=[];
-  for(let page=0;page<3;page++){
-    $('source').textContent='Loading real runs… ('+(page+1)+'/3)';
+  let cursor=null,tries=0;const all=[];
+  for(let page=0;page<20;page++){
+    $('source').textContent='Loading real runs… ('+(page+1)+')';
     const d=await api('/v1/measurement/runs?limit=100'+(cursor?'&cursor='+encodeURIComponent(cursor):''));
-    if(d.error)break;
+    if(d.error){if(d.error==='rate'&&tries++<3){page--;continue}loadErr=String(d.error);break}
     const items=Array.isArray(d.items)?d.items:[];
     for(const s of items){
-      if(s.measurementEligible&&Array.isArray(s.passages)){const o=compact(s);if(o)all.push(o)}
+      if(Array.isArray(s.passages)){const o=compact(s);if(o)all.push(o)}
     }
+    if(all.length>=6&&page>=2)break;
     if(!items.length||!d.nextCursor)break;
     cursor=d.nextCursor;
     await sleep(650);
   }
-  cands=all.filter(o=>o.length>=25);
+  if(!all.length&&!loadErr)loadErr='no usable runs found';
+  cands=all.filter(o=>o.length>=12);
   const buf=all.slice().sort((x,y)=>y.length-x.length).slice(0,4);
   return{buf};
 }
@@ -173,7 +178,7 @@ function showSource(){
   if(mode==='live'){el.textContent='Tempo derived from his live RPM, not a recording of each pass.';return}
   if(!pattern)return;
   if(mode==='daily'){el.textContent='Daily run for '+new Date().toISOString().slice(0,10)+' (UTC): everyone gets the same real run today. Compare scores with friends.';return}
-  el.textContent=pattern.practice?'Could not load real runs, so this is a labelled practice pattern.':'Replaying '+pattern.times.length+' real wheel passes recorded from the wheel (archived runs).';
+  el.textContent=pattern.practice?'Could not load real runs'+(loadErr?' ('+loadErr+')':'')+', so this is a labelled practice pattern.':'Replaying '+pattern.times.length+' real wheel passes recorded from the wheel (archived runs).';
 }
 
 /* ---------- sound ---------- */
