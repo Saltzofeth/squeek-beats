@@ -32,3 +32,5 @@ Unofficial community project, not affiliated with Squeekchain. It runs on the pu
 ## Run it
 
 Open `index.html` in a browser. One file, no build step, no dependencies.
+
+squeekchain-project: 9f1edf64-f0a9-435a-86b5-56e1629f4f62
