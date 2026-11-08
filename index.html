@@ -126,33 +126,50 @@ function renderState(){
 
 /* ---------- real runs ---------- */
 const practice=()=>({times:Array.from({length:32},(_,i)=>i*0.6),len:19.2,bpm:100,practice:true});
-function compact(s){
-  const offs=[];
-  for(const p of s.passages){const n=Number(p.offsetNs);if(isFinite(n))offs.push(n/1e6)}
-  if(offs.length<8)return null;
-  let ok=0;
-  for(let i=1;i<offs.length;i++){const d=offs[i]-offs[i-1];if(d>200&&d<1600)ok++}
-  return ok>=(offs.length-1)*.7?offs:null;
+let cands=[],basePattern=null,dailyP=null,loadErr='',loading=false;
+function absTimes(seg){
+  const t0=Date.parse(seg.startAt),out=[];
+  if(!isFinite(t0))return out;
+  for(const p of seg.passages){const n=Number(p.offsetNs);if(isFinite(n))out.push(t0+n/1e6)}
+  return out;
 }
-let cands=[],basePattern=null,dailyP=null,loadErr='';
+function goodRun(r){
+  if(r.length<24)return false;
+  const d=[];for(let i=1;i<r.length;i++)d.push(r[i]-r[i-1]);
+  d.sort((x,y)=>x-y);const m=d[d.length>>1];
+  return m>250&&m<1500;
+}
+function splitRuns(times){
+  const runs=[];let cur=[];
+  for(const t of times){
+    if(cur.length){
+      const d=t-cur[cur.length-1];
+      if(d<150)continue;
+      if(d>1700){if(goodRun(cur))runs.push(cur);cur=[]}
+    }
+    cur.push(t);
+  }
+  if(goodRun(cur))runs.push(cur);
+  return runs;
+}
 async function loadRuns(){
-  let cursor=null,tries=0;const all=[];
-  for(let page=0;page<20;page++){
+  let cursor=null,tries=0,runs=[];const times=[],t0=performance.now();
+  for(let page=0;page<25;page++){
     $('source').textContent='Loading real runs… ('+(page+1)+')';
     const d=await api('/v1/measurement/runs?limit=100'+(cursor?'&cursor='+encodeURIComponent(cursor):''));
     if(d.error){if(d.error==='rate'&&tries++<3){page--;continue}loadErr=String(d.error);break}
     const items=Array.isArray(d.items)?d.items:[];
-    for(const s of items){
-      if(Array.isArray(s.passages)){const o=compact(s);if(o)all.push(o)}
-    }
-    if(all.length>=6&&page>=2)break;
+    for(const seg of items)if(Array.isArray(seg.passages))for(const t of absTimes(seg))times.push(t);
+    runs=splitRuns(times);
+    if(runs.length>=8)break;
     if(!items.length||!d.nextCursor)break;
+    if(performance.now()-t0>25000)break;
     cursor=d.nextCursor;
     await sleep(650);
   }
-  if(!all.length&&!loadErr)loadErr='no usable runs found';
-  cands=all.filter(o=>o.length>=12);
-  const buf=all.slice().sort((x,y)=>y.length-x.length).slice(0,4);
+  if(!runs.length&&!loadErr)loadErr='no usable runs found';
+  cands=runs.map(r=>r.slice(0,48).map(t=>t-r[0]));
+  const buf=cands.slice().sort((x,y)=>y.length-x.length).slice(0,3);
   return{buf};
 }
 const dayNo=()=>Math.floor(Date.now()/864e5);
@@ -176,6 +193,7 @@ function buildPattern(buf){
 function showSource(){
   const el=$('source');
   if(mode==='live'){el.textContent='Tempo derived from his live RPM, not a recording of each pass.';return}
+  if(loading){el.textContent='Loading real runs… practice pattern until they arrive.';return}
   if(!pattern)return;
   if(mode==='daily'){el.textContent='Daily run for '+new Date().toISOString().slice(0,10)+' (UTC): everyone gets the same real run today. Compare scores with friends.';return}
   el.textContent=pattern.practice?'Could not load real runs'+(loadErr?' ('+loadErr+')':'')+', so this is a labelled practice pattern.':'Replaying '+pattern.times.length+' real wheel passes recorded from the wheel (archived runs).';
@@ -234,6 +252,7 @@ function renderScore(){
   $('ac').textContent=n?Math.round((S.p+S.g*.5)/n*100)+'%':'--';
 }
 function startPlay(){
+  if(mode!=='live')pattern=mode==='daily'?dailyP:basePattern;
   ensureAudio();resetScore();beats=[];idx=0;playing=true;
   S.mode=mode;S.day=new Date().toISOString().slice(0,10);S.bpm=mode!=='live'?pattern.bpm:Math.round(live.rpm);
   if(mode!=='live')nextLoop=clock()+.6;else liveNext=clock()+.6;
@@ -392,15 +411,17 @@ pollStatus();setInterval(pollStatus,3000);
 if(OVERLAY){
   mode='live';judging=false;playing=true;timer=setInterval(tick,100);
 }else{
+  basePattern=practice();pattern=basePattern;loading=true;
+  $('play').disabled=false;$('play').textContent='Play';$('bpm').textContent=pattern.bpm;
+  showSource();
   loadRuns().then(({buf})=>{
-    basePattern=buf.length?buildPattern(buf):practice();
+    loading=false;
+    if(buf.length)basePattern=buildPattern(buf);
     dailyP=dailyPattern();
-    pattern=basePattern;
     $('dailyRadio').disabled=!dailyP;
+    if(!playing){pattern=mode==='daily'?dailyP:basePattern;$('bpm').textContent=pattern.bpm}
     showSource();
-    $('play').disabled=false;$('play').textContent='Play';
-    $('bpm').textContent=pattern.bpm;
-  });
+  }).catch(()=>{loading=false;loadErr='error';showSource()});
 }
 </script>
 </body>
