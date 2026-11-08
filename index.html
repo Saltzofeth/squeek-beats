@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="A rhythm game built on the real wheel passes of Squeektoshi, the hamster behind Squeekchain. Tap along, score, share. Unofficial community project.">
+<meta property="og:title" content="Squeek Beats">
+<meta property="og:description" content="Tap along to the real rhythm of a hamster on a wheel.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B9%3C/text%3E%3C/svg%3E">
+<title>Squeek Beats</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a33;--amber:#ffb347;--cream:#f1ecc3;--blue:#a9b7ff;--mute:#7d89b5}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:#0b1020 radial-gradient(circle,#1d2850 1px,transparent 1.5px) 0 0/10px 10px;color:var(--cream);font:15px/1.55 ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+body.overlay{background:transparent}
+main{max-width:1040px;margin:0 auto;padding:24px 18px 40px}
+.dots{font-weight:800;color:transparent;background:radial-gradient(circle,var(--cream) 38%,transparent 43%) 0 0/5px 5px;-webkit-background-clip:text;background-clip:text}
+h1{margin:0;font-size:clamp(40px,9vw,84px);line-height:1;letter-spacing:.02em}
+.sub{color:var(--blue);margin:.6em 0 1.4em;max-width:60ch}
+.grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;align-items:start}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.stage{position:relative;aspect-ratio:1;touch-action:manipulation;cursor:pointer}
+canvas{width:100%;height:100%;display:block}
+#hit{position:absolute;left:0;right:0;bottom:6%;text-align:center;font-size:clamp(22px,5vw,34px);font-weight:800;opacity:0;pointer-events:none}
+#hit.pop{animation:pop .5s ease-out}
+@keyframes pop{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-14px)}}
+.bpm{display:flex;align-items:baseline;gap:12px}
+#bpm{font-size:clamp(64px,13vw,120px);line-height:1}
+.unit{color:var(--blue)}
+.row{margin:.9em 0}
+#state{margin:.2em 0}
+#source{margin:.2em 0;color:var(--mute);font-size:13px}
+.modes label{margin-right:18px;cursor:pointer}
+.modes input:disabled+span{opacity:.45}
+button,.btn{font:inherit;font-weight:700;border:0;border-radius:6px;padding:.7em 1.3em;cursor:pointer;background:var(--amber);color:#1a1200;text-decoration:none;display:inline-block}
+button.alt,.btn.alt{background:transparent;color:var(--blue);box-shadow:inset 0 0 0 2px #3a4780}
+button:disabled,.btn.off{opacity:.4;cursor:not-allowed;pointer-events:none}
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.score{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:1.2em 0;padding:14px;background:var(--panel);border-radius:8px}
+.score b{display:block;font-size:24px;color:var(--amber)}
+.score span{color:var(--mute);font-size:12px}
+input[type=range]{width:200px;vertical-align:middle;accent-color:var(--amber)}
+.foot{margin-top:32px;color:var(--mute);font-size:12px;max-width:70ch}
+body.overlay main{padding:0;max-width:none}
+body.overlay header,body.overlay .side,body.overlay .foot,body.overlay #hit{display:none}
+body.overlay .grid{display:block}
+@media(prefers-reduced-motion:reduce){#hit.pop{animation:none;opacity:1}}
+#cardView{height:auto;margin-top:12px}
+select{font:inherit;background:var(--panel);color:var(--cream);border:1px solid #3a4780;border-radius:6px;padding:.3em .5em}
+.how{color:var(--mute);max-width:60ch;margin:-.6em 0 1.4em;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1 class="dots">SQUEEK BEATS</h1>
+<p class="sub">Squeektoshi’s wheel is a drum. Tap along to the real rhythm of his runs and see how close you get.</p>
+<p class="how">How to play: press Play, then tap Space (or click or touch the wheel) every time the magnet passes. Perfect is within 60 ms. Try Daily run: everyone gets the same real run today.</p>
+</header>
+<section class="grid">
+<div class="stage" id="stage"><canvas id="c" width="720" height="720" aria-label="A wheel pulsing to the beat"></canvas><div id="hit" aria-live="polite"></div></div>
+<div class="side">
+<div class="bpm"><span id="bpm" class="dots">--</span><span class="unit">BPM</span></div>
+<p id="state">Checking on Squeektoshi…</p>
+<p id="source"></p>
+<div class="row modes">
+<label><input type="radio" name="mode" value="replay" checked> <span>Replay a real run</span></label>
+<label><input type="radio" name="mode" value="live" id="liveRadio"> <span>Live</span></label>
+<label><input type="radio" name="mode" value="daily" id="dailyRadio" disabled> <span>Daily run</span></label>
+</div>
+<div class="row"><button id="play" disabled>Loading…</button> <span style="color:var(--mute);font-size:13px">Tap with Space, click or touch.</span></div>
+<div class="row"><label>Sound <select id="kit"><option value="drums">Drums</option><option value="wood">Wheel clicks</option><option value="chip">Hamster melody</option></select></label></div>
+<div class="row"><label>Latency <input id="lat" type="range" min="-200" max="200" value="0" step="5"> <span id="latv">0 ms</span></label></div>
+<div class="score">
+<div><b id="sc">0</b><span>score</span></div>
+<div><b id="cb">0</b><span>combo</span></div>
+<div><b id="bs">0</b><span>best combo</span></div>
+<div><b id="ac">--</b><span>accuracy</span></div>
+</div>
+<div class="row"><button id="card" class="alt" disabled>Show score card</button> <a id="share" class="btn alt off" target="_blank" rel="noopener">Share on X</a></div>
+<div class="row"><button id="copy" class="alt" disabled>Copy result</button></div>
+<canvas id="cardView" width="540" height="540" style="display:none;max-width:100%;border-radius:8px"></canvas>
+<p id="stats" style="color:var(--mute);font-size:13px"></p>
+</div>
+</section>
+<p class="foot">Unofficial community project, not affiliated with Squeekchain. Tempo data comes from the public Squeekchain Sepolia test API. In Live mode the beat is derived from the wheel’s current RPM: it follows his pace but is not a recording of each pass.</p>
+</main>
+<script>
+const API='https://api.squeekchain.com';
+const OVERLAY=new URLSearchParams(location.search).get('overlay')==='1';
+if(OVERLAY)document.body.classList.add('overlay');
+const $=id=>document.getElementById(id);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+let ctx=null,master=null,nb=null;
+const clock=()=>ctx?ctx.currentTime:performance.now()/1000;
+
+let mode='replay',playing=false,judging=true,beats=[],nextLoop=0,liveNext=0,idx=0,timer=null,pattern=null,S;
+let live={known:false,active:false,rpm:0};
+
+async function api(path){
+  try{
+    const r=await fetch(API+path);
+    if(r.status===429){await sleep((Number(r.headers.get('Retry-After'))||2)*1000);return{error:'rate'}}
+    if(!r.ok)return{error:r.status};
+    return await r.json();
+  }catch(e){return{error:'network'}}
+}
+
+/* ---------- live status ---------- */
+async function pollStatus(){
+  const d=await api('/v1/status'),m=d&&d.measurement;
+  if(!d||d.error||d.status==='unavailable'||!m){live={known:false,active:false,rpm:0}}
+  else{
+    const rpm=(Number(m.rpmMilli)||0)/1000;
+    live={known:true,rpm,active:m.freshness==='online'&&m.coreStatus!=='COUNTER_FAULT'&&rpm>5};
+  }
+  renderState();
+}
+function renderState(){
+  $('state').textContent=live.known?(live.active?'Squeektoshi is running at '+Math.round(live.rpm)+' RPM.':'Squeektoshi is not running right now.'):'Live status is unknown right now.';
+  $('liveRadio').disabled=!live.active&&mode!=='live';
+  if(mode==='live'&&playing)$('bpm').textContent=live.active?Math.round(live.rpm):'--';
+}
+
+/* ---------- real runs ---------- */
+const practice=()=>({times:Array.from({length:32},(_,i)=>i*0.6),len:19.2,bpm:100,practice:true});
+function compact(s){
+  const offs=[];
+  for(const p of s.passages){const n=Number(p.offsetNs);if(isFinite(n))offs.push(n/1e6)}
+  return offs.length>=12?offs:null;
+}
+let cands=[],basePattern=null,dailyP=null;
+async function loadRuns(){
+  let cursor=null;const all=[];
+  for(let page=0;page<3;page++){
+    $('source').textContent='Loading real runs… ('+(page+1)+'/3)';
+    const d=await api('/v1/measurement/runs?limit=100'+(cursor?'&cursor='+encodeURIComponent(cursor):''));
+    if(d.error)break;
+    const items=Array.isArray(d.items)?d.items:[];
+    for(const s of items){
+      if(s.measurementEligible&&Array.isArray(s.passages)){const o=compact(s);if(o)all.push(o)}
+    }
+    if(!items.length||!d.nextCursor)break;
+    cursor=d.nextCursor;
+    await sleep(650);
+  }
+  cands=all.filter(o=>o.length>=25);
+  const buf=all.slice().sort((x,y)=>y.length-x.length).slice(0,4);
+  return{buf};
+}
+const dayNo=()=>Math.floor(Date.now()/864e5);
+function dailyPattern(){
+  if(!cands.length)return null;
+  return buildPattern([cands[dayNo()%cands.length]]);
+}
+function buildPattern(buf){
+  const times=[];let t=0;
+  for(const offs of buf){
+    const base=t;
+    offs.forEach(o=>times.push(base+o/1000));
+    t=base+offs[offs.length-1]/1000+1.2;
+  }
+  const iv=[];
+  for(let i=1;i<times.length;i++){const d=times[i]-times[i-1];if(d>0.15&&d<1.5)iv.push(d)}
+  iv.sort((a,b)=>a-b);
+  const med=iv.length?iv[iv.length>>1]:0.6;
+  return{times,len:t,bpm:Math.round(60/med)};
+}
+function showSource(){
+  const el=$('source');
+  if(mode==='live'){el.textContent='Tempo derived from his live RPM, not a recording of each pass.';return}
+  if(!pattern)return;
+  if(mode==='daily'){el.textContent='Daily run for '+new Date().toISOString().slice(0,10)+' (UTC): everyone gets the same real run today. Compare scores with friends.';return}
+  el.textContent=pattern.practice?'Could not load real runs, so this is a labelled practice pattern.':'Replaying '+pattern.times.length+' real wheel passes recorded from the wheel (archived runs).';
+}
+
+/* ---------- sound ---------- */
+function ensureAudio(){
+  if(!ctx){ctx=new(window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=.8;master.connect(ctx.destination)}
+  if(ctx.state==='suspended')ctx.resume();
+}
+function kick(T,acc,c=ctx,dst=master){
+  const o=c.createOscillator(),gn=c.createGain();
+  o.type='sine';o.frequency.setValueAtTime(acc?190:150,T);o.frequency.exponentialRampToValueAtTime(45,T+.12);
+  gn.gain.setValueAtTime(acc?1:.75,T);gn.gain.exponentialRampToValueAtTime(.001,T+.2);
+  o.connect(gn);gn.connect(dst);o.start(T);o.stop(T+.22);
+}
+function hat(T,c=ctx,dst=master){
+  if(!c._nb){const b=c.createBuffer(1,Math.floor(c.sampleRate*.06),c.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;c._nb=b}
+  const s=c.createBufferSource(),f=c.createBiquadFilter(),gn=c.createGain();
+  s.buffer=c._nb;f.type='highpass';f.frequency.value=7000;
+  gn.gain.setValueAtTime(.25,T);gn.gain.exponentialRampToValueAtTime(.001,T+.05);
+  s.connect(f);f.connect(gn);gn.connect(dst);s.start(T);
+}
+const SCALE=[0,3,5,7,10,12,15,17];
+function playKit(T,i){
+  const k=$('kit').value;
+  if(k==='drums'){kick(T,i%4===0);return}
+  const o=ctx.createOscillator(),gn=ctx.createGain();
+  if(k==='wood'){
+    o.type='triangle';o.frequency.setValueAtTime(i%4===0?1100:800,T);o.frequency.exponentialRampToValueAtTime(300,T+.05);
+    gn.gain.setValueAtTime(.7,T);gn.gain.exponentialRampToValueAtTime(.001,T+.07);
+    o.connect(gn);gn.connect(master);o.start(T);o.stop(T+.08);return;
+  }
+  const n=SCALE[(i*3+Math.floor(i/8))%SCALE.length];
+  o.type='square';o.frequency.setValueAtTime(220*Math.pow(2,n/12),T);
+  gn.gain.setValueAtTime(.18,T);gn.gain.exponentialRampToValueAtTime(.001,T+.22);
+  o.connect(gn);gn.connect(master);o.start(T);o.stop(T+.24);
+}
+function addBeat(T,i){
+  beats.push({t:T,j:!judging});
+  if(ctx&&!OVERLAY)playKit(T,i);
+}
+function scheduleLoop(start){
+  const t=pattern.times;
+  t.forEach((x,i)=>{
+    addBeat(start+x,i);
+    if(i&&ctx&&$('kit').value==='drums'&&x-t[i-1]<1.5)hat(start+(x+t[i-1])/2);
+  });
+}
+
+/* ---------- engine ---------- */
+function resetScore(){S={score:0,combo:0,best:0,p:0,g:0,m:0,mode:mode,bpm:0};renderScore()}
+function renderScore(){
+  $('sc').textContent=Math.round(S.score);$('cb').textContent=S.combo;$('bs').textContent=S.best;
+  const n=S.p+S.g+S.m;
+  $('ac').textContent=n?Math.round((S.p+S.g*.5)/n*100)+'%':'--';
+}
+function startPlay(){
+  ensureAudio();resetScore();beats=[];idx=0;playing=true;
+  S.mode=mode;S.day=new Date().toISOString().slice(0,10);S.bpm=mode!=='live'?pattern.bpm:Math.round(live.rpm);
+  if(mode!=='live')nextLoop=clock()+.6;else liveNext=clock()+.6;
+  clearInterval(timer);timer=setInterval(tick,100);
+  $('play').textContent='Stop';$('card').disabled=true;$('copy').disabled=true;$('cardView').style.display='none';setShare(false);
+  $('bpm').textContent=S.bpm;
+}
+function stopPlay(msg){
+  playing=false;clearInterval(timer);beats=[];
+  $('play').textContent='Play';
+  const n=S.p+S.g+S.m;
+  $('card').disabled=!n;$('copy').disabled=!n;setShare(n>0);
+  if(n){saveStats();showCard()}
+  if(msg)$('source').textContent=msg;
+}
+function tick(){
+  const now=clock();
+  if(mode!=='live'){
+    while(nextLoop<now+1.5){scheduleLoop(nextLoop);nextLoop+=pattern.len}
+  }else{
+    if(!live.active){
+      liveNext=0;
+      if(!OVERLAY&&playing)stopPlay('Squeektoshi stopped running. Try Replay.');
+      return;
+    }
+    if(liveNext<now-.5)liveNext=now+.2;
+    const iv=60/live.rpm;
+    while(liveNext<now+.5){addBeat(liveNext,idx++);liveNext+=iv}
+  }
+}
+function hit(t,c){
+  const h=$('hit');h.textContent=t;h.style.color=c;
+  h.classList.remove('pop');void h.offsetWidth;h.classList.add('pop');
+}
+function judge(k){
+  const mult=1+Math.min(Math.floor(S.combo/10),4)*.5;
+  if(k==='P'){S.p++;S.combo++;S.score+=100*mult;hit('Perfect','#f1ecc3')}
+  else if(k==='G'){S.g++;S.combo++;S.score+=50*mult;hit('Good','#a9b7ff')}
+  else{S.m++;S.combo=0;hit(k==='M'?'Miss':'Off beat','#ff8a7a')}
+  S.best=Math.max(S.best,S.combo);renderScore();
+}
+function tap(){
+  if(!playing||!judging)return;
+  const T=clock()-(+$('lat').value)/1000;
+  let best=null,bd=1e9;
+  for(const b of beats){if(b.j)continue;const d=Math.abs(b.t-T)*1000;if(d<bd){bd=d;best=b}}
+  if(best&&bd<=60){best.j=true;judge('P')}
+  else if(best&&bd<=120){best.j=true;judge('G')}
+  else judge('X');
+}
+
+/* ---------- drawing ---------- */
+const cv=$('c'),g=cv.getContext('2d');
+function dot(x,y,r,col,a){g.globalAlpha=a;g.fillStyle=col;g.beginPath();g.arc(x,y,r,0,7);g.fill()}
+function draw(now){
+  const C=360;g.clearRect(0,0,720,720);
+  let prev=null,next=null;
+  for(const b of beats){if(b.t<=now)prev=b;else{next=b;break}}
+  let ang=0,age=9;
+  if(playing&&prev){age=now-prev.t;ang=next&&next.t-prev.t<2?(now-prev.t)/(next.t-prev.t)*Math.PI*2:0}
+  const dim=playing?1:.45;
+  for(let i=0;i<64;i++){const a=i/64*Math.PI*2;dot(C+Math.cos(a)*250,C+Math.sin(a)*250,6,'#ffb347',.9*dim)}
+  for(let s=0;s<6;s++){
+    const a=s*Math.PI/3+ang;
+    for(let r=50;r<=230;r+=30)dot(C+Math.cos(a)*r,C+Math.sin(a)*r,4,'#f1ecc3',.55*dim);
+  }
+  dot(C+Math.cos(ang)*250,C+Math.sin(ang)*250,13,'#f1ecc3',dim);
+  if(age<.5){
+    const k=age/.5,rad=250+k*90;
+    for(let i=0;i<48;i++){const a=i/48*Math.PI*2;dot(C+Math.cos(a)*rad,C+Math.sin(a)*rad,6*(1-k)+1,'#a9b7ff',(1-k)*.9)}
+  }
+  for(let gy=-70;gy<=70;gy+=12)for(let gx=-100;gx<=100;gx+=12){
+    if((gx/100)**2+(gy/70)**2<=1)dot(C+gx,C+gy+10,5,'#ffb347',dim);
+  }
+  for(const ex of[-70,70])for(let gy=-26;gy<=26;gy+=10)for(let gx=-26;gx<=26;gx+=10){
+    if(gx*gx+gy*gy<=676)dot(C+ex+gx,C-62+gy,4,'#ffb347',dim);
+  }
+  dot(C-34,C,7,'#0b1020',1);dot(C+34,C,7,'#0b1020',1);
+  g.globalAlpha=1;
+}
+function frame(){
+  const now=clock();
+  if(playing&&judging)for(const b of beats)if(!b.j&&now-b.t>.12){b.j=true;judge('M')}
+  while(beats.length&&beats[0].t<now-4)beats.shift();
+  draw(now);requestAnimationFrame(frame);
+}
+
+/* ---------- score card ---------- */
+function acc(){const n=S.p+S.g+S.m;return n?Math.round((S.p+S.g*.5)/n*100):0}
+function makeCard(){
+  const c=document.createElement('canvas');c.width=c.height=1080;
+  const x=c.getContext('2d');
+  x.fillStyle='#0b1020';x.fillRect(0,0,1080,1080);
+  x.fillStyle='#1d2850';
+  for(let y=5;y<1080;y+=10)for(let xx=5;xx<1080;xx+=10)x.fillRect(xx,y,2,2);
+  const dp=col=>{const p=document.createElement('canvas');p.width=p.height=10;const q=p.getContext('2d');q.fillStyle=col;q.beginPath();q.arc(5,5,3.4,0,7);q.fill();return x.createPattern(p,'repeat')};
+  const T=(s,px,y,col,dotted)=>{x.font='800 '+px+'px ui-monospace,Menlo,Consolas,monospace';x.textAlign='left';x.fillStyle=dotted?dp(col):col;x.fillText(s,90,y)};
+  T('SQUEEK BEATS',96,190,'#f1ecc3',true);
+  T('I tapped along to a real hamster.',34,260,'#a9b7ff');
+  T(String(Math.round(S.score)),230,560,'#ffb347',true);
+  T('score',34,610,'#7d89b5');
+  T(acc()+'% accuracy',48,720,'#f1ecc3');
+  T('best combo '+S.best,48,790,'#f1ecc3');
+  T(S.bpm+' BPM, '+(S.mode==='live'?'his live pace':S.mode==='daily'?'daily run '+S.day:'a real run'),48,860,'#f1ecc3');
+  T('Unofficial community project. Squeekchain Sepolia test data.',26,1010,'#7d89b5');
+  return c;
+}
+function shareText(){return(S.mode==='daily'?'Daily run '+S.day+': ':'')+'I scored '+Math.round(S.score)+' on Squeek Beats, tapping along to Squeektoshi’s real wheel ('+acc()+'% accuracy, best combo '+S.best+'). Unofficial community project for @squeekchain'}
+function setShare(on){
+  const a=$('share');a.classList.toggle('off',!on);
+  if(on)a.href='https://x.com/intent/post?text='+encodeURIComponent(shareText());else a.removeAttribute('href');
+}
+function showCard(){
+  const v=$('cardView');v.getContext('2d').drawImage(makeCard(),0,0,540,540);v.style.display='block';
+}
+function saveStats(){
+  const n=S.p+S.g+S.m;if(!n)return;
+  const b=store.get('sb_best')||{},k=S.mode==='daily'?'daily:'+S.day:S.mode;
+  if(!b[k]||S.score>b[k])b[k]=Math.round(S.score);
+  store.set('sb_best',b);
+  if(S.mode==='daily'){const d=store.get('sb_days')||[];if(!d.includes(S.day)){d.push(S.day);store.set('sb_days',d.slice(-60))}}
+  renderStats();
+}
+function renderStats(){
+  const b=store.get('sb_best')||{},d=store.get('sb_days')||[],today=new Date().toISOString().slice(0,10);
+  let st=0,t=Date.parse(today);
+  while(d.includes(new Date(t).toISOString().slice(0,10))){st++;t-=864e5}
+  $('stats').textContent='Your best here: '+(b[mode==='daily'?'daily:'+today:mode]||0)+'  |  Daily streak: '+st+' day'+(st===1?'':'s');
+}
+
+/* ---------- wiring ---------- */
+$('play').onclick=e=>{
+  e.currentTarget.blur();
+  if(playing){stopPlay();return}
+  if(mode==='live'&&!live.active){$('source').textContent='Live needs a running hamster. Try Replay.';return}
+  startPlay();
+};
+$('card').onclick=showCard;
+$('copy').onclick=()=>{try{navigator.clipboard.writeText(shareText());$('copy').textContent='Copied'}catch(e){$('copy').textContent='Copy failed'}setTimeout(()=>{$('copy').textContent='Copy result'},1500)};
+document.querySelectorAll('input[name=mode]').forEach(r=>r.onchange=()=>{
+  if(playing)stopPlay();
+  mode=r.value;
+  pattern=mode==='daily'?dailyP:basePattern;
+  $('bpm').textContent=mode!=='live'&&pattern?pattern.bpm:'--';
+  renderStats();
+  renderState();showSource();
+});
+$('lat').oninput=()=>{$('latv').textContent=$('lat').value+' ms'};
+addEventListener('keydown',e=>{if(e.code==='Space'&&playing){e.preventDefault();if(!e.repeat)tap()}});
+addEventListener('keyup',e=>{if(e.code==='Space'&&playing)e.preventDefault()});
+$('stage').addEventListener('pointerdown',e=>{e.preventDefault();tap()});
+
+resetScore();renderStats();
+requestAnimationFrame(frame);
+pollStatus();setInterval(pollStatus,3000);
+if(OVERLAY){
+  mode='live';judging=false;playing=true;timer=setInterval(tick,100);
+}else{
+  loadRuns().then(({buf})=>{
+    basePattern=buf.length?buildPattern(buf):practice();
+    dailyP=dailyPattern();
+    pattern=basePattern;
+    $('dailyRadio').disabled=!dailyP;
+    showSource();
+    $('play').disabled=false;$('play').textContent='Play';
+    $('bpm').textContent=pattern.bpm;
+  });
+}
+</script>
+</body>
+</html>
